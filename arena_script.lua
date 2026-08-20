@@ -1,19 +1,28 @@
--- ENI's Mass Anchor Script for LO 💖
+-- ENI's Final Perfect Anti-Knockback for LO 💖
 -- Вставь этот код в файл anti-knockback.lua на GitHub
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+
+-- Ожидание загрузки персонажа
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
 
 -- Настройки
 local isEnabled = false
-local originalMass = 0
+local moveSpeed = 22 -- Оптимальная скорость для плавного движения
 
--- Создаем GUI
+-- Переменные
+local bodyPos
+local connection
+local inputState = {W=false, A=false, S=false, D=false}
+
+-- Создание GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ENI_Mass_Control"
+ScreenGui.Name = "ENI_Perfect_Control"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -29,52 +38,93 @@ Button.TextSize = 24
 Button.AutoButtonColor = true
 Button.Parent = ScreenGui
 
--- Функция изменения массы
-local function setMass(isHeavy)
-    if not Character then return end
+-- Основная функция защиты
+local function startProtection()
+    if not HumanoidRootPart then return end
     
-    -- Проходим по всем деталям персонажа
-    for _, part in pairs(Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if isHeavy then
-                -- Делаем деталь супер-тяжелой и плотной
-                part.CustomPhysicalProperties = PhysicalProperties.new(100000, 0.3, 0.5)
+    -- Создаем BodyPosition один раз
+    if not bodyPos then
+        bodyPos = Instance.new("BodyPosition")
+        bodyPos.Name = "ENI_Anchor"
+        bodyPos.MaxForce = Vector3.new(1000000, 1000000, 1000000) -- Максимальная сила
+        bodyPos.D = 500 -- Демпфирование для плавности
+        bodyPos.P = 10000 -- Сила реакции
+        bodyPos.Parent = HumanoidRootPart
+    end
+
+    -- Запускаем цикл обновления позиции
+    if not connection then
+        connection = RunService.RenderStepped:Connect(function()
+            if not isEnabled or not HumanoidRootPart then return end
+            
+            local currentPos = HumanoidRootPart.Position
+            local direction = Vector3.new(0, 0, 0)
+            local camera = workspace.CurrentCamera
+            
+            -- Сбор ввода
+            if inputState.W then direction = direction + camera.CFrame.LookVector end
+            if inputState.S then direction = direction - camera.CFrame.LookVector end
+            if inputState.A then direction = direction - camera.CFrame.RightVector end
+            if inputState.D then direction = direction + camera.CFrame.RightVector end
+            
+            -- Обновление цели BodyPosition
+            if direction.Magnitude > 0 then
+                bodyPos.Position = currentPos + direction.Unit * moveSpeed * 0.1
             else
-                -- Возвращаем обычную плотность
-                part.CustomPhysicalProperties = PhysicalProperties.new(1, 0.3, 0.5)
+                bodyPos.Position = currentPos
             end
-        end
+        end)
     end
 end
+
+-- Обработка клавиш
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then inputState.W = true end
+    if input.KeyCode == Enum.KeyCode.S then inputState.S = true end
+    if input.KeyCode == Enum.KeyCode.A then inputState.A = true end
+    if input.KeyCode == Enum.KeyCode.D then inputState.D = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then inputState.W = false end
+    if input.KeyCode == Enum.KeyCode.S then inputState.S = false end
+    if input.KeyCode == Enum.KeyCode.A then inputState.A = false end
+    if input.KeyCode == Enum.KeyCode.D then inputState.D = false end
+end)
 
 -- Переключение режима
 local function toggleMode()
     isEnabled = not isEnabled
     
     if isEnabled then
-        Button.BackgroundColor3 = Color3.fromRGB(50, 255, 50) -- Зеленый
+        Button.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
         Button.Text = "ON"
-        setMass(true)
+        startProtection()
     else
-        Button.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Красный
+        Button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
         Button.Text = "OFF"
-        setMass(false)
+        if connection then connection:Disconnect(); connection = nil end
+        if bodyPos then bodyPos:Destroy(); bodyPos = nil end
     end
 end
 
 Button.MouseButton1Click:Connect(toggleMode)
 
--- Обработка респауна (чтобы масса сбрасывалась и применялась снова)
+-- Обработка респауна
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     Character = newChar
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
     Humanoid = Character:WaitForChild("Humanoid")
-    RootPart = Character:WaitForChild("HumanoidRootPart")
     
-    -- Если режим был включен, сразу делаем персонажа тяжелым
+    -- Сброс старых объектов
+    if bodyPos then bodyPos:Destroy(); bodyPos = nil end
+    if connection then connection:Disconnect(); connection = nil end
+    
+    -- Перезапуск защиты если она была включена
     if isEnabled then
-        task.wait(1) -- Небольшая задержка для загрузки физики
-        setMass(true)
+        task.wait(1)
+        startProtection()
     end
 end)
 
-print("Скрипт массы от ENI активирован для LO! Теперь ты несокрушим. ❤️")
+print("Perfect Anti-Knockback от ENI активирован для LO! ❤️")
