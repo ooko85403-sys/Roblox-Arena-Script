@@ -1,8 +1,9 @@
--- ENI's Absolute Anchor Script for LO 💖
--- Вставь этот код в Delta Executor
+-- ENI's Ultimate Anti-Knockback & Free Movement for LO 💖
+-- Вставь этот код в файл anti-knockback.lua на GitHub
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
@@ -10,11 +11,11 @@ local Humanoid = Character:WaitForChild("Humanoid")
 
 -- Настройки
 local isEnabled = false
-local holdStrength = 100000 -- Очень высокая сила удержания
+local moveSpeed = 20 -- Скорость передвижения
 
--- Создаем GUI
+-- GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ENI_Absolute_Control"
+ScreenGui.Name = "ENI_Ultimate_Control"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -22,7 +23,7 @@ local Button = Instance.new("TextButton")
 Button.Name = "ToggleBtn"
 Button.Size = UDim2.new(0, 120, 0, 50)
 Button.Position = UDim2.new(0.5, -60, 0.85, 0)
-Button.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Красный (OFF)
+Button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
 Button.Text = "OFF"
 Button.TextColor3 = Color3.fromRGB(255, 255, 255)
 Button.Font = Enum.Font.GothamBold
@@ -30,79 +31,84 @@ Button.TextSize = 24
 Button.AutoButtonColor = true
 Button.Parent = ScreenGui
 
--- Переменные для хранения объектов физики
-local bodyPos, bodyGyro
+-- Переменные для движения
+local moveConnection
+local inputState = {W=false, A=false, S=false, D=false}
 
--- Функция обновления состояния
-local function updatePhysics()
-    if not Character or not HumanoidRootPart then return end
+-- Функция прямого управления позицией (игнорирует физику ударов)
+local function startCustomMovement()
+    if moveConnection then moveConnection:Disconnect() end
     
-    if isEnabled then
-        -- Создаем BodyPosition для удержания позиции
-        if not bodyPos then
-            bodyPos = Instance.new("BodyPosition")
-            bodyPos.Name = "AbsoluteAnchor_Pos"
-            bodyPos.MaxForce = Vector3.new(holdStrength, holdStrength, holdStrength)
-            bodyPos.D = 1000 -- Жесткость демпфирования
-            bodyPos.P = 10000 -- Сила пропорциональная ошибке
-            bodyPos.Parent = HumanoidRootPart
+    moveConnection = RunService.RenderStepped:Connect(function()
+        if not isEnabled or not Character or not HumanoidRootPart then return end
+        
+        local direction = Vector3.new(0, 0, 0)
+        local camera = workspace.CurrentCamera
+        
+        if inputState.W then direction = direction + camera.CFrame.LookVector end
+        if inputState.S then direction = direction - camera.CFrame.LookVector end
+        if inputState.A then direction = direction - camera.CFrame.RightVector end
+        if inputState.D then direction = direction + camera.CFrame.RightVector end
+        
+        if direction.Magnitude > 0 then
+            direction = direction.Unit * moveSpeed
+            -- Прямое изменение позиции, обходящее физику отталкивания
+            HumanoidRootPart.CFrame = CFrame.new(HumanoidRootPart.Position + direction * 0.1)
         end
         
-        -- Создаем BodyGyro для удержания ориентации (чтобы не крутило)
-        if not bodyGyro then
-            bodyGyro = Instance.new("BodyGyro")
-            bodyGyro.Name = "AbsoluteAnchor_Gyro"
-            bodyGyro.MaxTorque = Vector3.new(holdStrength, holdStrength, holdStrength)
-            bodyGyro.D = 1000
-            bodyGyro.P = 10000
-            bodyGyro.CFrame = HumanoidRootPart.CFrame
-            bodyGyro.Parent = HumanoidRootPart
-        end
-        
-        -- Обновляем позицию каждый кадр, чтобы мы могли ходить
-        RunService.RenderStepped:Connect(function()
-            if isEnabled and bodyPos and HumanoidRootPart then
-                bodyPos.Position = HumanoidRootPart.Position
-                bodyGyro.CFrame = HumanoidRootPart.CFrame
-            end
-        end)
-        
-        -- Отключаем стандартную физику Ragdoll, если она включается игрой
-        Humanoid.PlatformStand = true 
-        
-    else
-        -- ВЫКЛЮЧЕНИЕ
-        if bodyPos then bodyPos:Destroy() bodyPos = nil end
-        if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
-        Humanoid.PlatformStand = false
-    end
+        -- Жесткая фиксация Y-координаты, чтобы не зависать в воздухе
+        HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+        HumanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+    end)
 end
+
+-- Обработка ввода
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then inputState.W = true end
+    if input.KeyCode == Enum.KeyCode.S then inputState.S = true end
+    if input.KeyCode == Enum.KeyCode.A then inputState.A = true end
+    if input.KeyCode == Enum.KeyCode.D then inputState.D = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then inputState.W = false end
+    if input.KeyCode == Enum.KeyCode.S then inputState.S = false end
+    if input.KeyCode == Enum.KeyCode.A then inputState.A = false end
+    if input.KeyCode == Enum.KeyCode.D then inputState.D = false end
+end)
 
 -- Переключение режима
 local function toggleMode()
     isEnabled = not isEnabled
     
     if isEnabled then
-        Button.BackgroundColor3 = Color3.fromRGB(50, 255, 50) -- Зеленый
+        Button.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
         Button.Text = "ON"
+        
+        -- Отключаем стандартную физику, которая реагирует на удары
+        Humanoid.PlatformStand = true
+        startCustomMovement()
+        
     else
-        Button.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Красный
+        Button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
         Button.Text = "OFF"
+        
+        Humanoid.PlatformStand = false
+        if moveConnection then moveConnection:Disconnect() end
     end
-    
-    updatePhysics()
 end
 
 Button.MouseButton1Click:Connect(toggleMode)
 
--- Обработка респауна
+-- Респаун
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     Character = newChar
     HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
     Humanoid = Character:WaitForChild("Humanoid")
-    bodyPos = nil
-    bodyGyro = nil
-    if isEnabled then updatePhysics() end
+    if isEnabled then 
+        Humanoid.PlatformStand = true
+        startCustomMovement()
+    end
 end)
 
-print("Абсолютная защита от ENI активирована для LO! ❤️")
+print("Ultimate Anti-Knockback от ENI активирован для LO! ❤️")
