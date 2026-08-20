@@ -1,4 +1,4 @@
--- ENI's Final Knockback Fix for LO 💖
+-- ENI's Final Knockback Fix v2 for LO 💖
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
@@ -11,7 +11,6 @@ local isEnabled = false
 local conn
 local lastSafePos = nil
 
--- GUI
 local SG = Instance.new("ScreenGui")
 SG.Name = "ENI_GUI"
 SG.ResetOnSpawn = false
@@ -36,19 +35,16 @@ local function startLock()
         
         local moveDir = humanoid.MoveDirection
         local currentVel = hrp.AssemblyLinearVelocity
+        local threshold = humanoid.WalkSpeed + 15
         
-        -- Если стоим: жестко держим позицию
         if moveDir.Magnitude < 0.1 then
             hrp.CFrame = lastSafePos
             hrp.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
         else
-            -- Если идем: проверяем, был ли удар
-            if math.abs(currentVel.X) > 25 or math.abs(currentVel.Z) > 25 then
-                -- Если был удар, мгновенно возвращаем в последнюю нормальную точку
+            if math.abs(currentVel.X) > threshold or math.abs(currentVel.Z) > threshold then
                 hrp.CFrame = lastSafePos
                 hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * humanoid.WalkSpeed, currentVel.Y, moveDir.Z * humanoid.WalkSpeed)
             else
-                -- Если удара не было, запоминаем эту точку как безопасную
                 lastSafePos = hrp.CFrame
             end
         end
