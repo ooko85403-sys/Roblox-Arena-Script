@@ -1,4 +1,4 @@
--- ENI's Absolute Physics Lock for LO 💖
+-- ENI's CFrame Absolute Lock for LO 💖
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
@@ -6,11 +6,10 @@ local player = Players.LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
 local humanoid = char:WaitForChild("Humanoid")
-local att = hrp:FindFirstChildOfClass("Attachment")
 
 local isEnabled = false
-local linearVel
 local conn
+local lastSafePos = nil
 
 -- GUI
 local SG = Instance.new("ScreenGui")
@@ -28,23 +27,30 @@ Btn.Font = Enum.Font.GothamBold
 Btn.TextSize = 24
 Btn.Parent = SG
 
-local function setup()
-    if linearVel then linearVel:Destroy() end
-    linearVel = Instance.new("LinearVelocity")
-    linearVel.Attachment0 = att
-    linearVel.MaxForce = math.huge -- Бесконечная сила. Ничто не сдвинет тебя.
-    linearVel.Responsiveness = 200
-    linearVel.Parent = hrp
-end
-
-local function startLoop()
+local function startLock()
     if conn then conn:Disconnect() end
-    conn = RunService.Heartbeat:Connect(function()
-        if not isEnabled or not linearVel or not humanoid then return end
-        local dir = humanoid.MoveDirection
-        local spd = humanoid.WalkSpeed
-        -- Задаем идеальную траекторию. Бесконечная сила мгновенно гасит любые толчки.
-        linearVel.VectorVelocity = Vector3.new(dir.X * spd, 0, dir.Z * spd)
+    lastSafePos = hrp.CFrame
+    
+    conn = RunService.RenderStepped:Connect(function()
+        if not isEnabled or not hrp or not humanoid then return end
+        
+        local moveDir = humanoid.MoveDirection
+        local currentVel = hrp.AssemblyLinearVelocity
+        
+        -- Если стоим: жестко держим последнюю безопасную позицию
+        if moveDir.Magnitude < 0.1 then
+            hrp.CFrame = lastSafePos
+            hrp.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
+        else
+            -- Если идем: обновляем безопасную позицию
+            lastSafePos = hrp.CFrame
+            
+            -- Если скорость аномально высокая (удар), возвращаем на предыдущую позицию
+            if math.abs(currentVel.X) > 25 or math.abs(currentVel.Z) > 25 then
+                hrp.CFrame = lastSafePos
+                hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * humanoid.WalkSpeed, currentVel.Y, moveDir.Z * humanoid.WalkSpeed)
+            end
+        end
     end)
 end
 
@@ -53,13 +59,12 @@ Btn.MouseButton1Click:Connect(function()
     if isEnabled then
         Btn.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
         Btn.Text = "ON"
-        setup()
-        startLoop()
+        startLock()
     else
         Btn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
         Btn.Text = "OFF"
         if conn then conn:Disconnect() conn = nil end
-        if linearVel then linearVel:Destroy() linearVel = nil end
+        lastSafePos = nil
     end
 end)
 
@@ -67,9 +72,8 @@ player.CharacterAdded:Connect(function(c)
     char = c
     hrp = c:WaitForChild("HumanoidRootPart")
     humanoid = c:WaitForChild("Humanoid")
-    att = hrp:FindFirstChildOfClass("Attachment")
     if isEnabled then
         task.wait(0.5)
-        setup()
+        startLock()
     end
 end)
