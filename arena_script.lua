@@ -1,15 +1,17 @@
-local RunService = game:GetService("RunService")
+-- ENI's Final Knockback Fix for LO 💖
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local char = player.Character or player.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
-local hum = char:WaitForChild("Humanoid")
+local humanoid = char:WaitForChild("Humanoid")
 
 local isEnabled = false
+local conn
 local lastSafePos = nil
-local renderConn, heartbeatConn
 
+-- GUI
 local SG = Instance.new("ScreenGui")
 SG.Name = "ENI_GUI"
 SG.ResetOnSpawn = false
@@ -25,25 +27,30 @@ Btn.Font = Enum.Font.GothamBold
 Btn.TextSize = 24
 Btn.Parent = SG
 
-local function start()
-    if renderConn then renderConn:Disconnect() end
-    if heartbeatConn then heartbeatConn:Disconnect() end
-
-    renderConn = RunService.RenderStepped:Connect(function()
-        if not isEnabled or not hrp then return end
-        lastSafePos = hrp.Position
-    end)
-
-    heartbeatConn = RunService.Heartbeat:Connect(function()
-        if not isEnabled or not hrp or not hum or not lastSafePos then return end
-
-        local vel = hrp.AssemblyLinearVelocity
-        local horizontalSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
-        local maxSpeed = hum.WalkSpeed + 2 
-
-        if horizontalSpeed > maxSpeed then
-            hrp.CFrame = CFrame.new(lastSafePos.X, hrp.Position.Y, lastSafePos.Z) * hrp.CFrame.Rotation
-            hrp.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
+local function startLock()
+    if conn then conn:Disconnect() end
+    lastSafePos = hrp.CFrame
+    
+    conn = RunService.RenderStepped:Connect(function()
+        if not isEnabled or not hrp or not humanoid then return end
+        
+        local moveDir = humanoid.MoveDirection
+        local currentVel = hrp.AssemblyLinearVelocity
+        
+        -- Если стоим: жестко держим позицию
+        if moveDir.Magnitude < 0.1 then
+            hrp.CFrame = lastSafePos
+            hrp.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
+        else
+            -- Если идем: проверяем, был ли удар
+            if math.abs(currentVel.X) > 25 or math.abs(currentVel.Z) > 25 then
+                -- Если был удар, мгновенно возвращаем в последнюю нормальную точку
+                hrp.CFrame = lastSafePos
+                hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * humanoid.WalkSpeed, currentVel.Y, moveDir.Z * humanoid.WalkSpeed)
+            else
+                -- Если удара не было, запоминаем эту точку как безопасную
+                lastSafePos = hrp.CFrame
+            end
         end
     end)
 end
@@ -53,18 +60,21 @@ Btn.MouseButton1Click:Connect(function()
     if isEnabled then
         Btn.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
         Btn.Text = "ON"
-        start()
+        startLock()
     else
         Btn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
         Btn.Text = "OFF"
-        if renderConn then renderConn:Disconnect() end
-        if heartbeatConn then heartbeatConn:Disconnect() end
+        if conn then conn:Disconnect() conn = nil end
+        lastSafePos = nil
     end
 end)
 
 player.CharacterAdded:Connect(function(c)
     char = c
     hrp = c:WaitForChild("HumanoidRootPart")
-    hum = c:WaitForChild("Humanoid")
-    if isEnabled then task.wait(0.5); start() end
+    humanoid = c:WaitForChild("Humanoid")
+    if isEnabled then
+        task.wait(0.5)
+        startLock()
+    end
 end)
