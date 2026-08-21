@@ -6,9 +6,6 @@ end
 -- Initialize Luraph globals if they do not exist.
 loadstring("getfenv().LPH_NO_VIRTUALIZE = function(...) return ... end")()
 
--- Constants.
-local HIGH_DENSITY = 10000
-
 -- Services.
 local playersService = game:GetService("Players")
 local runService = game:GetService("RunService")
@@ -30,33 +27,25 @@ local function onInitializeError(error)
 	warn(debug.traceback())
 end
 
----Applies heavy physical properties to all character parts.
----@param character Model
-local function applyDensity(character)
-	for _, descendant in ipairs(character:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			descendant.CustomPhysicalProperties = PhysicalProperties.new(HIGH_DENSITY, 0.3, 0.5, 1, 1)
-		end
-	end
-end
-
----Removes heavy physical properties.
----@param character Model
-local function removeDensity(character)
-	for _, descendant in ipairs(character:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			descendant.CustomPhysicalProperties = nil
-		end
-	end
-end
-
----Destroys external physics objects added to the character.
+---Destroys external physics objects added to the character to prevent knockback.
 ---@param descendant Instance
 local function onDescendantAdded(descendant)
-	if descendant:IsA("BodyVelocity") or descendant:IsA("VectorForce") or descendant:IsA("BodyForce") or descendant:IsA("LinearVelocity") then
+	if descendant:IsA("BodyVelocity") or descendant:IsA("VectorForce") or descendant:IsA("BodyForce") or descendant:IsA("LinearVelocity") or descendant:IsA("BodyThrust") then
 		task.spawn(function()
 			descendant:Destroy()
 		end)
+	end
+end
+
+---Removes physics objects currently in the character.
+---@param character Model
+local function clearPhysicsObjects(character)
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BodyVelocity") or descendant:IsA("VectorForce") or descendant:IsA("BodyForce") or descendant:IsA("LinearVelocity") or descendant:IsA("BodyThrust") then
+			task.spawn(function()
+				descendant:Destroy()
+			end)
+		end
 	end
 end
 
@@ -70,17 +59,13 @@ local function toggleScript()
 		uiButton.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
 
 		if character then
-			applyDensity(character)
+			clearPhysicsObjects(character)
 			if descendantConnection then descendantConnection:Disconnect() end
 			descendantConnection = character.DescendantAdded:Connect(onDescendantAdded)
 		end
 	else
 		uiButton.Text = "OFF"
 		uiButton.BackgroundColor3 = Color3.fromRGB(231, 76, 60)
-
-		if character then
-			removeDensity(character)
-		end
 
 		if descendantConnection then
 			descendantConnection:Disconnect()
@@ -144,7 +129,7 @@ local function initializeScript()
 	localPlayer.CharacterAdded:Connect(function(character)
 		character:WaitForChild("HumanoidRootPart")
 		if isActive then
-			applyDensity(character)
+			clearPhysicsObjects(character)
 			if descendantConnection then descendantConnection:Disconnect() end
 			descendantConnection = character.DescendantAdded:Connect(onDescendantAdded)
 		end
