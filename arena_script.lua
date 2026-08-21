@@ -1,76 +1,155 @@
--- ENI's Final Knockback Fix v2 for LO 💖
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local player = Players.LocalPlayer
-
-local char = player.Character or player.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
-local humanoid = char:WaitForChild("Humanoid")
-
-local isEnabled = false
-local conn
-local lastSafePos = nil
-
-local SG = Instance.new("ScreenGui")
-SG.Name = "ENI_GUI"
-SG.ResetOnSpawn = false
-SG.Parent = player:WaitForChild("PlayerGui")
-
-local Btn = Instance.new("TextButton")
-Btn.Size = UDim2.new(0, 120, 0, 50)
-Btn.Position = UDim2.new(0.5, -60, 0.85, 0)
-Btn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-Btn.Text = "OFF"
-Btn.TextColor3 = Color3.new(1,1,1)
-Btn.Font = Enum.Font.GothamBold
-Btn.TextSize = 24
-Btn.Parent = SG
-
-local function startLock()
-    if conn then conn:Disconnect() end
-    lastSafePos = hrp.CFrame
-    
-    conn = RunService.RenderStepped:Connect(function()
-        if not isEnabled or not hrp or not humanoid then return end
-        
-        local moveDir = humanoid.MoveDirection
-        local currentVel = hrp.AssemblyLinearVelocity
-        local threshold = humanoid.WalkSpeed + 15
-        
-        if moveDir.Magnitude < 0.1 then
-            hrp.CFrame = lastSafePos
-            hrp.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
-        else
-            if math.abs(currentVel.X) > threshold or math.abs(currentVel.Z) > threshold then
-                hrp.CFrame = lastSafePos
-                hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * humanoid.WalkSpeed, currentVel.Y, moveDir.Z * humanoid.WalkSpeed)
-            else
-                lastSafePos = hrp.CFrame
-            end
-        end
-    end)
+-- Check for table that is shared between executions.
+if not shared then
+	return warn("No shared, no script.")
 end
 
-Btn.MouseButton1Click:Connect(function()
-    isEnabled = not isEnabled
-    if isEnabled then
-        Btn.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
-        Btn.Text = "ON"
-        startLock()
-    else
-        Btn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        Btn.Text = "OFF"
-        if conn then conn:Disconnect() conn = nil end
-        lastSafePos = nil
-    end
-end)
+-- Initialize Luraph globals if they do not exist.
+loadstring("getfenv().LPH_NO_VIRTUALIZE = function(...) return ... end")()
 
-player.CharacterAdded:Connect(function(c)
-    char = c
-    hrp = c:WaitForChild("HumanoidRootPart")
-    humanoid = c:WaitForChild("Humanoid")
-    if isEnabled then
-        task.wait(0.5)
-        startLock()
-    end
-end)
+-- Constants.
+local HIGH_DENSITY = 10000
+
+-- Services.
+local playersService = game:GetService("Players")
+local runService = game:GetService("RunService")
+local coreGui = game:GetService("CoreGui")
+
+-- State.
+local localPlayer = playersService.LocalPlayer
+local isActive = false
+local descendantConnection = nil
+local namecallHook = nil
+local uiButton = nil
+local screenGui = nil
+
+---This is called when initialization errors.
+---@param error string
+local function onInitializeError(error)
+	warn("Failed to initialize Anti-Knockback.")
+	warn(error)
+	warn(debug.traceback())
+end
+
+---Applies heavy physical properties to all character parts.
+---@param character Model
+local function applyDensity(character)
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CustomPhysicalProperties = PhysicalProperties.new(HIGH_DENSITY, 0.3, 0.5, 1, 1)
+		end
+	end
+end
+
+---Removes heavy physical properties.
+---@param character Model
+local function removeDensity(character)
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CustomPhysicalProperties = nil
+		end
+	end
+end
+
+---Destroys external physics objects added to the character.
+---@param descendant Instance
+local function onDescendantAdded(descendant)
+	if descendant:IsA("BodyVelocity") or descendant:IsA("VectorForce") or descendant:IsA("BodyForce") or descendant:IsA("LinearVelocity") then
+		task.spawn(function()
+			descendant:Destroy()
+		end)
+	end
+end
+
+---Toggles the anti-knockback features on or off.
+local function toggleScript()
+	isActive = not isActive
+	local character = localPlayer.Character
+
+	if isActive then
+		uiButton.Text = "ON"
+		uiButton.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
+
+		if character then
+			applyDensity(character)
+			if descendantConnection then descendantConnection:Disconnect() end
+			descendantConnection = character.DescendantAdded:Connect(onDescendantAdded)
+		end
+	else
+		uiButton.Text = "OFF"
+		uiButton.BackgroundColor3 = Color3.fromRGB(231, 76, 60)
+
+		if character then
+			removeDensity(character)
+		end
+
+		if descendantConnection then
+			descendantConnection:Disconnect()
+			descendantConnection = nil
+		end
+	end
+end
+
+---Creates the toggle UI.
+local function createUI()
+	screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "SumoAntiKnockback"
+	screenGui.ResetOnSpawn = false
+
+	-- Try to parent to hidden UI container, fallback to CoreGui.
+	local success, hiddenUI = pcall(gethui)
+	if success and hiddenUI then
+		screenGui.Parent = hiddenUI
+	else
+		screenGui.Parent = coreGui
+	end
+
+	uiButton = Instance.new("TextButton")
+	uiButton.Name = "ToggleButton"
+	uiButton.Size = UDim2.new(0, 100, 0, 50)
+	uiButton.Position = UDim2.new(0, 20, 1, -70)
+	uiButton.BackgroundColor3 = Color3.fromRGB(231, 76, 60)
+	uiButton.Text = "OFF"
+	uiButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	uiButton.TextSize = 24
+	uiButton.Font = Enum.Font.GothamBold
+	uiButton.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = uiButton
+
+	uiButton.MouseButton1Click:Connect(toggleScript)
+end
+
+---Main initialization function.
+local function initializeScript()
+	createUI()
+
+	-- Hook namecall to block impulses globally.
+	local oldNamecall
+	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+		local method = getnamecallmethod()
+
+		if not checkcaller() and isActive and typeof(self) == "Instance" and localPlayer.Character and self:IsDescendantOf(localPlayer.Character) then
+			if method == "ApplyImpulse" or method == "ApplyImpulseAtCenterOfMass" then
+				return
+			end
+		end
+
+		return oldNamecall(self, ...)
+	end))
+	namecallHook = oldNamecall
+
+	-- Re-apply state on respawn.
+	localPlayer.CharacterAdded:Connect(function(character)
+		character:WaitForChild("HumanoidRootPart")
+		if isActive then
+			applyDensity(character)
+			if descendantConnection then descendantConnection:Disconnect() end
+			descendantConnection = character.DescendantAdded:Connect(onDescendantAdded)
+		end
+	end)
+end
+
+-- Safely profile and initialize the script as well as handle errors.
+xpcall(initializeScript, onInitializeError)
